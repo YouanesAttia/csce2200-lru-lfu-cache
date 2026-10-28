@@ -1,0 +1,25 @@
+# Build output
+build/
+*.o
+*.out
+*.exe
+
+# Persistent store files created at runtime
+*.db
+*.store
+*.dat
+data/*.bin
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# LaTeX / report build files
+report/*.aux
+report/*.log
+report/*.out
+report/*.toc
+report/*.bbl
+report/*.blg
