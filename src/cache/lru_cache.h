@@ -10,8 +10,8 @@ class LRUCache
 {
 private:
     size_t capacity_;
-    hash_table<doubly_linked_list::Node *> index_;
-    doubly_linked_list order_;
+    hash_table<DoublyLinkedList::Node *> index_;
+    DoublyLinkedList order_;
     void evictLeastRecent();
 
 public:

@@ -13,10 +13,10 @@ LRUCache::~LRUCache()
 
 bool LRUCache::get(const string &key, string &value)
 {
-    DoublyLinkedList::DLLNode **found = index_.find(key);
+    DoublyLinkedList::Node **found = index_.find(key);
     if (!found)
         return false;
-    DoublyLinkedList::DLLNode *node = *found;
+    DoublyLinkedList::Node *node = *found;
     value = node->data;
     order_.moveToFront(node);
     return true;
@@ -27,7 +27,7 @@ void LRUCache::put(const string &key, const string &value)
     if (capacity_ == 0)
         return;
 
-    DoublyLinkedList::DLLNode **found = index_.find(key);
+    DoublyLinkedList::Node **found = index_.find(key);
     if (found)
     {
         (*found)->data = value;
@@ -38,7 +38,7 @@ void LRUCache::put(const string &key, const string &value)
     if (order_.size() == capacity_)
         evictLeastRecent();
 
-    DoublyLinkedList::DLLNode *node = order_.pushFront(key, value);
+    DoublyLinkedList::Node *node = order_.pushFront(key, value);
     index_.insert(key, node);
 }
 
@@ -49,7 +49,7 @@ bool LRUCache::contains(const string &key) const
 
 void LRUCache::evictLeastRecent()
 {
-    DoublyLinkedList::DLLNode *victim = order_.detachBack();
+    DoublyLinkedList::Node *victim = order_.detachBack();
     if (!victim)
         return;
     index_.erase(victim->key);
@@ -60,13 +60,13 @@ bool LRUCache::validate() const
 {
     if (order_.size() != index_.size())
         return false;
-    const DoublyLinkedList::DLLNode *previous = nullptr;
+    const DoublyLinkedList::Node *previous = nullptr;
     size_t counted = 0;
-    for (const DoublyLinkedList::DLLNode *node = order_.head(); node; node = node->next)
+    for (const DoublyLinkedList::Node *node = order_.head(); node; node = node->next)
     {
         if (node->prev != previous)
             return false;
-        const DoublyLinkedList::DLLNode *const *indexed = index_.find(node->key);
+        const DoublyLinkedList::Node *const *indexed = index_.find(node->key);
         if (!indexed || *indexed != node)
             return false;
         previous = node;
