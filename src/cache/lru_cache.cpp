@@ -6,11 +6,6 @@ LRUCache::LRUCache(size_t capacity)
       index_(capacity * 2 + 1),
       order_() {}
 
-LRUCache::~LRUCache()
-{
-    // The list owns the nodes. The hash table only stores non-owning pointers.
-}
-
 bool LRUCache::get(const string &key, string &value)
 {
     DoublyLinkedList::Node **found = index_.find(key);
@@ -39,7 +34,11 @@ void LRUCache::put(const string &key, const string &value)
         evictLeastRecent();
 
     DoublyLinkedList::Node *node = order_.pushFront(key, value);
-    index_.insert(key, node);
+    if (!index_.insert(key, node))
+    {
+        // Keep the two data structures consistent if insertion fails.
+        order_.erase(node);
+    }
 }
 
 bool LRUCache::contains(const string &key) const
@@ -52,7 +51,7 @@ void LRUCache::evictLeastRecent()
     DoublyLinkedList::Node *victim = order_.detachBack();
     if (!victim)
         return;
-    index_.erase(victim->key);
+    index_.remove(victim->key);
     delete victim;
 }
 
@@ -60,19 +59,17 @@ bool LRUCache::validate() const
 {
     if (order_.size() != index_.size())
         return false;
-    const DoublyLinkedList::Node *previous = nullptr;
-    size_t counted = 0;
-    for (const DoublyLinkedList::Node *node = order_.head(); node; node = node->next)
-    {
-        if (node->prev != previous)
-            return false;
-        const DoublyLinkedList::Node *const *indexed = index_.find(node->key);
-        if (!indexed || *indexed != node)
-            return false;
-        previous = node;
-        ++counted;
-    }
-    if (previous != order_.tail())
+
+    if (order_.size() > capacity_)
         return false;
-    return counted == order_.size();
+
+    for (DoublyLinkedList::Node *current = order_.head(); current != nullptr; current = current->next)
+    {
+        DoublyLinkedList::Node *const *found = index_.find(current->key);
+
+        if (found == nullptr || *found != current)
+            return false;
+    }
+
+    return true;
 }

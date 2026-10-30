@@ -10,13 +10,13 @@ class LRUCache
 {
 private:
     size_t capacity_;
-    hash_table<DoublyLinkedList::Node *> index_;
+    HashTable<DoublyLinkedList::Node *> index_;
     DoublyLinkedList order_;
     void evictLeastRecent();
 
 public:
     LRUCache(size_t capacity);
-    ~LRUCache();
+    ~LRUCache() = default;
 
     LRUCache(const LRUCache &) = delete;
     LRUCache &operator=(const LRUCache &) = delete;
