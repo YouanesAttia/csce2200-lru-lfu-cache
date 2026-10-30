@@ -39,6 +39,9 @@ public:
 
     ~MinHeap() { delete[] data_; }
 
+    MinHeap(const MinHeap &) = delete;
+    MinHeap &operator=(const MinHeap &) = delete;
+
     size_t size() const { return size_; }
     bool empty() const { return size_ == 0; }
 
