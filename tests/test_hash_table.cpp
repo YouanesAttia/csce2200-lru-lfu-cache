@@ -2,11 +2,12 @@
 #include <cassert>
 #include <string>
 #include "../src/structures/hash_table.hpp"
+#include "../src/structures/doubly_linked_list.hpp"
 using namespace std;
 
 void test_empty_table()
 {
-    HashTable table;
+    HashTable<int> table;
     assert(table.empty() == true);
     assert(table.size() == 0);
     assert(table.find("missing") == 0);
@@ -18,7 +19,7 @@ void test_empty_table()
 
 void test_insert_and_find()
 {
-    HashTable table;
+    HashTable<int> table;
     assert(table.insert("alpha", 1) == true);
     assert(table.insert("beta", 2) == true);
     assert(table.insert("gamma", 3) == true);
@@ -44,7 +45,7 @@ void test_insert_and_find()
 
 void test_duplicate_insert()
 {
-    HashTable table;
+    HashTable<int> table;
     assert(table.insert("key", 10) == true);
     assert(table.insert("key", 20) == false);
     assert(*table.find("key") == 10); // the first value stays
@@ -54,7 +55,7 @@ void test_duplicate_insert()
 
 void test_update()
 {
-    HashTable table;
+    HashTable<int> table;
     table.insert("key", 1);
     assert(table.update("key", 2) == true);
     assert(*table.find("key") == 2);
@@ -68,7 +69,7 @@ void test_update()
 
 void test_remove()
 {
-    HashTable table;
+    HashTable<int> table;
     table.insert("a", 1);
     table.insert("b", 2);
 
@@ -92,7 +93,7 @@ void test_collisions()
     // It works for longer keys too, so all six of these collide. This is the
     // weak point of a 31 based string hash, and it is why collisions have to
     // be handled properly instead of assumed to be rare.
-    HashTable table;
+    HashTable<int> table;
     const string keys[] = {"Aa", "BB", "AaAa", "AaBB", "BBAa", "BBBB"};
     const int count = sizeof(keys) / sizeof(keys[0]); // how many keys are above
 
@@ -120,7 +121,7 @@ void test_remove_from_chain()
     // Removing the first node of a chain is a different case from removing one
     // in the middle, so both are tested. New keys go in at the front, so the
     // chain here is BBBB -> BBAa -> AaBB -> BB -> Aa.
-    HashTable table;
+    HashTable<int> table;
     const string keys[] = {"Aa", "BB", "AaBB", "BBAa", "BBBB"};
     const int count = sizeof(keys) / sizeof(keys[0]);
     for (int i = 0; i < count; ++i)
@@ -146,7 +147,7 @@ void test_remove_from_chain()
 
 void test_growth()
 {
-    HashTable table(4); // start tiny so it has to grow several times
+    HashTable<int> table(4); // start tiny so it has to grow several times
     const size_t startingBuckets = table.bucketCount();
     const int count = 1000;
 
@@ -174,7 +175,7 @@ void test_growth()
 
 void test_clear()
 {
-    HashTable table;
+    HashTable<int> table;
     for (int i = 0; i < 100; ++i)
         table.insert("key" + to_string(i), i);
     const size_t buckets = table.bucketCount();
@@ -191,6 +192,33 @@ void test_clear()
     cout << "[SUCCESS] test_clear" << endl;
 }
 
+void test_pointer_values()
+{
+    HashTable<DoublyLinkedList::Node *> index;
+
+    DoublyLinkedList::Node n1("k1", "first_data");
+    DoublyLinkedList::Node n2("k2", "second_data");
+    DoublyLinkedList::Node n3("k3", "third_data");
+
+    assert(index.empty() == true);
+
+    assert(index.insert("cache_key1", &n1) == true);
+    assert(index.insert("cache_key2", &n2) == true);
+    assert(index.size() == 2);
+
+    assert(*index.find("cache_key1") == &n1);
+    assert(*index.find("cache_key2") == &n2);
+
+    assert(index.update("cache_key1", &n3) == true);
+    assert(*index.find("cache_key1") == &n3);
+
+    assert(index.remove("cache_key2") == true);
+    assert(index.find("cache_key2") == nullptr);
+    assert(index.size() == 1);
+
+    cout << "[SUCCESS] test_pointer_values" << endl;
+}
+
 int main()
 {
     test_empty_table();
@@ -202,6 +230,7 @@ int main()
     test_remove_from_chain();
     test_growth();
     test_clear();
+    test_pointer_values();
     cout << "ALL TESTS PASSED!" << endl;
     return 0;
 }
