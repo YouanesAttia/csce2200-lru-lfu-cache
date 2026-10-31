@@ -1,0 +1,13 @@
+product:1001 Wireless mouse, 2.4 GHz, black
+product:1002 Mechanical keyboard, blue switches
+product:1003 USB-C hub with HDMI and card reader
+product:1004 27 inch monitor, 1440p
+product:1005 Laptop stand, aluminium
+product:1006 Noise cancelling headphones
+product:1007 Webcam 1080p with microphone
+product:1008 Portable SSD 1 TB
+product:1009 Desk lamp with dimmer
+product:1010 Ergonomic office chair
+user:alice Alice Johnson, alice@example.com
+user:bob Bob Smith, bob@example.com
+unicode:key-ñ-é Value with accents: café, naïve
