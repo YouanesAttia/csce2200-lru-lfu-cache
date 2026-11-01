@@ -74,7 +74,7 @@ void testFrequencyBucketCreationAndRemoval()
     assert(cache.frequencyOf("A") == 3);
     assert(cache.minFrequency() == 2);
 
-    assert(cache.get("B", value)); 
+    assert(cache.get("B", value));
     assert(cache.frequencyOf("B") == 3);
     assert(cache.minFrequency() == 3);
     assert(cache.validate());
@@ -89,12 +89,12 @@ void testEvictsLowestFrequency()
 
     string value;
     assert(cache.get("A", value));
-    assert(cache.get("A", value)); 
-    assert(cache.get("B", value)); 
+    assert(cache.get("A", value));
+    assert(cache.get("B", value));
 
     cache.put("D", "Durian");
 
-    assert(!cache.contains("C")); 
+    assert(!cache.contains("C"));
     assert(cache.contains("A"));
     assert(cache.contains("B"));
     assert(cache.contains("D"));
@@ -122,7 +122,7 @@ void testLRUTieBreakingWithinSameFrequency()
 
     cache.put("D", "Durian");
 
-    assert(!cache.contains("A")); 
+    assert(!cache.contains("A"));
     assert(cache.contains("B"));
     assert(cache.contains("C"));
     assert(cache.contains("D"));
@@ -155,7 +155,7 @@ void testExplicitRemovalAndMinimumUpdate()
 
     string value;
     assert(cache.get("A", value));
-    assert(cache.remove("B"));      
+    assert(cache.remove("B"));
     assert(!cache.remove("B"));
     assert(cache.minFrequency() == 1);
     assert(cache.remove("C"));
@@ -222,7 +222,6 @@ void testClearAndReuse()
     assert(cache.frequencyOf("C") == 2);
     assert(cache.validate());
 }
-
 
 void testHashIndexGrowthKeepsEntriesReachable()
 {
