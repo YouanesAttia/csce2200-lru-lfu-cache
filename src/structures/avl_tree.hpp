@@ -1,10 +1,8 @@
 #include <algorithm>
-#include <cstddef>
 #include <functional>
-#include <utility>
-
+using namespace std;
 // Generic AVL search tree. Keys are unique according to Compare.
-template <typename Key, typename Value, typename Compare = std::less<Key>>
+template <typename Key, typename Value, typename Compare = less<Key>>
 class AVLTree
 {
 private:
@@ -21,14 +19,14 @@ private:
     };
 
     Node *root_;
-    std::size_t size_;
+    size_t size_;
     Compare compare_;
 
     static int nodeHeight(const Node *n) { return n ? n->height : 0; }
 
     static void updateHeight(Node *n)
     {
-        n->height = 1 + std::max(nodeHeight(n->left), nodeHeight(n->right));
+        n->height = 1 + max(nodeHeight(n->left), nodeHeight(n->right));
     }
 
     static int balanceFactor(const Node *n)
@@ -222,7 +220,7 @@ public:
         return erased;
     }
 
-    std::size_t size() const { return size_; }
+    size_t size() const { return size_; }
     bool empty() const { return size_ == 0; }
 
     void clear()
