@@ -17,7 +17,7 @@ LRUCache::LRUCache(size_t capacity)
 {
 }
 
-/**
+/*
  * Retrieves the value associated with a given key.
  *
  * If the key is found, the accessed item is moved to the front of the
