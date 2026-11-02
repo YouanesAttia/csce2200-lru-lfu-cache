@@ -131,5 +131,3 @@ For sanitizer builds, add `-fsanitize=address,undefined -fno-omit-frame-pointer`
 **Application entry point:** placeholder.  
 **End-to-end integration test:** placeholder.  
 **Build automation:** Makefile is empty.
-
-See `docs/PROJECT_PLAN.md`, `docs/INTEGRATION_TEST_PLAN.md`, and `docs/MILESTONE1_DISCUSSION_GUIDE.md` for the initial system plan and remaining work.
