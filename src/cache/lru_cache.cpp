@@ -47,8 +47,10 @@ bool LRUCache::get(const string &key, string &value)
  * cache is at maximum capacity, the least recently used item is evicted
  * before insertion.
  */
-void LRUCache::put(const string &key, const string &value)
+void LRUCache::put(const string &key, const string &value, string *evictedKey)
 {
+    if (evictedKey)
+        evictedKey->clear();
     // Zero-capacity caches cannot store anything
     if (capacity_ == 0)
         return;
@@ -65,7 +67,7 @@ void LRUCache::put(const string &key, const string &value)
 
     // Case 2: Key does not exist. Check if we need to evict an old item first.
     if (order_.size() == capacity_)
-        evictLeastRecent();
+        evictLeastRecent(evictedKey);
 
     // Insert the new item at the front (Most Recently Used)
     DoublyLinkedList::Node *node = order_.pushFront(key, value);
@@ -77,6 +79,24 @@ void LRUCache::put(const string &key, const string &value)
         // This handles potential memory allocation failures or index limitations.
         order_.erase(node);
     }
+}
+
+bool LRUCache::remove(const string &key)
+{
+    DoublyLinkedList::Node **p = index_.find(key);
+    if (!p)
+        return false;
+
+    DoublyLinkedList::Node *n = *p;
+    index_.remove(key);
+    order_.erase(n);
+    return true;
+}
+
+void LRUCache::clear()
+{
+    index_.clear();
+    order_.clear();
 }
 
 /**
@@ -94,20 +114,20 @@ bool LRUCache::contains(const string &key) const
  * This method removes it from the list, drops it from the index, and
  * frees the allocated memory.
  */
-void LRUCache::evictLeastRecent()
+void LRUCache::evictLeastRecent(string *evictedKey)
 {
     // Remove the tail of the list
-    DoublyLinkedList::Node *victim = order_.detachBack();
+    DoublyLinkedList::Node *victim = order_.tail();
 
     // Safety check in case the list is already empty
     if (!victim)
         return;
 
+    if (evictedKey)
+        *evictedKey = victim->key;
     // Remove the key from the hash index
     index_.remove(victim->key);
-
-    // Free the memory of the evicted node
-    delete victim;
+    order_.erase(victim);
 }
 
 /**
@@ -126,16 +146,22 @@ bool LRUCache::validate() const
     if (order_.size() > capacity_)
         return false;
 
+    size_t count = 0;
+    DoublyLinkedList::Node *prev = 0;
     // Traverse the list and verify every node matches what the index tracks
     for (DoublyLinkedList::Node *current = order_.head(); current != nullptr; current = current->next)
     {
+        if (current->prev != prev || current->owner != &order_)
+            return false;
         DoublyLinkedList::Node *const *found = index_.find(current->key);
 
         // Discrepancy found: Node exists in the list but missing or points
         // to a completely different node in the hash index.
         if (found == nullptr || *found != current)
             return false;
+        prev = current;
+        ++count;
     }
 
-    return true;
+    return prev == order_.tail() && count == order_.size();
 }
