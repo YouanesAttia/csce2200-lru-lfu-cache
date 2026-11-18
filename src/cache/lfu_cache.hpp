@@ -8,6 +8,37 @@
 #include <limits>
 #include <string>
 
+/*
+ * Least Frequently Used (LFU) cache with an LRU tie-breaker.
+ *
+ * Current repository interface:
+ *   - keys are std::string
+ *   - values are std::string
+ *   - DoublyLinkedList stores key/value pairs
+ *
+ * Design:
+ *   - The frequency buckets form a doubly linked list sorted by frequency.
+ *   - Each frequency bucket owns a DoublyLinkedList of entries with that
+ *     frequency. The list head is most-recently used; its tail is least-recently
+ *     used.
+ *   - The hash table maps each key directly to its entry node and frequency
+ *     bucket, avoiding a scan through the buckets.
+ *   - The first frequency bucket is always the minimum-frequency bucket.
+ *
+ * Policy decisions:
+ *   - A newly inserted key starts at frequency 1.
+ *   - A successful get increments frequency.
+ *   - Updating an existing key through put also counts as an access and
+ *     increments frequency.
+ *   - A put for a new key into a full cache evicts before inserting.
+ *   - A zero-capacity cache ignores put calls.
+ *   - A missing get returns false and leaves the output value unchanged.
+ *
+ * Expected time for get/put/remove: O(1), assuming expected O(1) hash-table
+ * operations. Hash collisions can make an individual operation O(n) in the
+ * worst case. Insertion into the hash table may occasionally resize it.
+ */
+
 class LFUCache
 {
 private:
@@ -21,11 +52,15 @@ private:
         explicit FrequencyBucket(std::size_t f)
             : frequency(f), prev(nullptr), next(nullptr), entries() {}
 
+
         ~FrequencyBucket() = default;
 
         FrequencyBucket(const FrequencyBucket &) = delete;
         FrequencyBucket &operator=(const FrequencyBucket &) = delete;
     };
+
+    // The hash table stores this small locator for every cached key.
+    // Both pointers refer to objects owned by this LFUCache.
 
     struct EntryLocation
     {
@@ -43,6 +78,9 @@ private:
     FrequencyBucket *firstBucket_;
     std::size_t minFrequency_;
 
+    // Make the bucket the new first bucket. This is used for frequency 1,
+    // which is always smaller than every frequency already in the cache.
+
     FrequencyBucket *createFirstBucket(std::size_t frequency)
     {
         FrequencyBucket *bucket = new FrequencyBucket(frequency);
@@ -56,6 +94,8 @@ private:
         return bucket;
     }
 
+    // Insert a new frequency bucket immediately after a known bucket.
+
     FrequencyBucket *createBucketAfter(FrequencyBucket *previous, std::size_t frequency)
     {
         FrequencyBucket *bucket = new FrequencyBucket(frequency);
@@ -68,6 +108,9 @@ private:
         previous->next = bucket;
         return bucket;
     }
+
+    // Unlink and delete an empty bucket. Entry lists are required to be empty
+    // before this function is called.
 
     void deleteEmptyBucket(FrequencyBucket *bucket)
     {
@@ -86,10 +129,14 @@ private:
         updateMinimumFrequency();
     }
 
+    // Make sure minfrequency is consistent with first bucket
+
     void updateMinimumFrequency()
     {
         minFrequency_ = (firstBucket_ == nullptr) ? 0 : firstBucket_->frequency;
     }
+
+    // Promote one entry from frequency f to f+1
 
     void promote(const std::string &key, EntryLocation *location)
     {
@@ -99,6 +146,8 @@ private:
 
         FrequencyBucket *oldBucket = location->bucket;
         DoublyLinkedList::Node *oldNode = location->entryNode;
+
+        // A size_t frequency cannot be incremented beyond its maximum value.
 
         if (oldBucket->frequency == std::numeric_limits<std::size_t>::max())
         {
@@ -121,12 +170,15 @@ private:
             createdBucket = true;
         }
 
+        // save data before erasing the old list node.
+
         const std::string savedKey = oldNode->key;
         const std::string savedValue = oldNode->data;
 
         DoublyLinkedList::Node *newNode =
             newBucket->entries.pushFront(savedKey, savedValue);
 
+        // Update the index before destroying the old node. If the update fails. roll back the new node.
         if (!index_.update(key, EntryLocation(newNode, newBucket)))
         {
             newBucket->entries.erase(newNode);
@@ -139,6 +191,9 @@ private:
         if (oldBucket->entries.empty())
             deleteEmptyBucket(oldBucket);
     }
+
+    // Remove the least-recently-used entry from the minimum-frequency bucket.
+    // The tail is LRU because new/promoted entries are inserted at the head.
 
     bool evictLeastFrequentlyUsed()
     {
@@ -180,6 +235,10 @@ public:
     LFUCache(const LFUCache &) = delete;
     LFUCache &operator=(const LFUCache &) = delete;
 
+    // Return true on a hit. A hit increments the entry's frequency and makes
+    // it the most-recently-used entry inside its new frequency bucket.
+    // On a miss, return false without changing value.
+
     bool get(const std::string &key, std::string &value)
     {
         EntryLocation *location = index_.find(key);
@@ -190,6 +249,11 @@ public:
         promote(key, location);
         return true;
     }
+
+
+    // Insert a new key at frequency 1. If the key already exists, overwrite
+    // its value and count the put as an access (frequency increases by one).
+    // If capacity is zero, the cache remains empty.
 
     void put(const std::string &key, const std::string &value)
     {
@@ -215,6 +279,7 @@ public:
 
         DoublyLinkedList::Node *node = bucket->entries.pushFront(key, value);
 
+        // Rollback incase of inseration refusal
         if (!index_.insert(key, EntryLocation(node, bucket)))
         {
             bucket->entries.erase(node);
@@ -226,6 +291,9 @@ public:
         ++size_;
         updateMinimumFrequency();
     }
+
+
+    // Remove an entry. Returns false when the key is absent.
 
     bool remove(const std::string &key)
     {
@@ -265,6 +333,8 @@ public:
         return location->bucket->frequency;
     }
 
+    // Delete all entries and buckets.
+
     void clear()
     {
         index_.clear();
@@ -282,6 +352,10 @@ public:
         minFrequency_ = 0;
     }
 
+    // Expensive consistency check for tests/debugging; not part of normal
+    // cache operations. It verifies bucket ordering, list ownership, index
+    // pointers, entry count, and minimum-frequency tracking.
+    
     bool validate() const
     {
         if (size_ != index_.size() || size_ > capacity_)
