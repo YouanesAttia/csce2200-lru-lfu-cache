@@ -62,6 +62,8 @@ On access, an entry is promoted to the next frequency bucket and moved to that b
 
 Expected `get` and `put` complexity is O(1), subject to expected O(1) HashTable operations and the maintained adjacent-bucket structure.
 
+When multiple entries share the minimum frequency, the least recently used entry is evicted (LRU among equals).
+
 ### Persistent Backing Store
 
 The storage component uses an append-only log file and an in-memory `HashIndex`. The index maps each key to the file offset and value length of its latest record. Updates append a newer record rather than rewriting an earlier record. When the file is opened, the implementation scans the log and rebuilds the index. The status API distinguishes a missing key (`NotFound`) from storage errors.
