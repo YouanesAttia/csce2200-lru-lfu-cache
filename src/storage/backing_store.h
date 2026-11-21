@@ -70,7 +70,8 @@ private:
 //   open() == Recovered  usable; a damaged tail was discarded (see discardedBytes())
 // Keys must be 1 to MAX_KEY_LEN bytes. Values may be empty, up to MAX_VALUE_LEN
 // bytes, and may contain any byte including zero.
-// Not thread-safe. One BackingStore object per file.
+// The store is single-threaded, and the cache manager is its only caller.
+// One BackingStore object per file.
 class BackingStore {
 public:
     BackingStore();
