@@ -3,6 +3,7 @@
 
 #include "../structures/hash_table.hpp"
 #include "../structures/doubly_linked_list.hpp"
+#include "icache.hpp"
 
 #include <cstddef>
 #include <limits>
@@ -24,6 +25,8 @@
  *   - The hash table maps each key directly to its entry node and frequency
  *     bucket, avoiding a scan through the buckets.
  *   - The first frequency bucket is always the minimum-frequency bucket.
+ *   - Within a frequency bucket, the head is most recently used and the tail
+ *     is least recently used, so ties are resolved using LRU.
  *
  * Policy decisions:
  *   - A newly inserted key starts at frequency 1.
@@ -39,7 +42,7 @@
  * worst case. Insertion into the hash table may occasionally resize it.
  */
 
-class LFUCache
+class LFUCache : public ICache
 {
 private:
     struct FrequencyBucket
@@ -129,7 +132,7 @@ private:
         updateMinimumFrequency();
     }
 
-    // Make sure minfrequency is consistent with first bucket
+    // Keep minFrequency_ in sync with the first bucket.
 
     void updateMinimumFrequency()
     {
@@ -170,7 +173,7 @@ private:
             createdBucket = true;
         }
 
-        // save data before erasing the old list node.
+        // Save the data before erasing the old list node.
 
         const std::string savedKey = oldNode->key;
         const std::string savedValue = oldNode->data;
@@ -178,7 +181,7 @@ private:
         DoublyLinkedList::Node *newNode =
             newBucket->entries.pushFront(savedKey, savedValue);
 
-        // Update the index before destroying the old node. If the update fails. roll back the new node.
+        // Update the index before destroying the old node. If it fails, roll back the new node.
         if (!index_.update(key, EntryLocation(newNode, newBucket)))
         {
             newBucket->entries.erase(newNode);
@@ -195,7 +198,7 @@ private:
     // Remove the least-recently-used entry from the minimum-frequency bucket.
     // The tail is LRU because new/promoted entries are inserted at the head.
 
-    bool evictLeastFrequentlyUsed()
+    bool evictLeastFrequentlyUsed(std::string *evictedKey)
     {
         if (firstBucket_ == nullptr)
             return false;
@@ -206,6 +209,8 @@ private:
             return false;
 
         const std::string victimKey = victim->key;
+        if (evictedKey != nullptr)
+            *evictedKey = victimKey;
 
         index_.remove(victimKey);
         bucket->entries.erase(victim);
@@ -227,7 +232,7 @@ public:
     {
     }
 
-    ~LFUCache()
+    ~LFUCache() override
     {
         clear();
     }
@@ -239,7 +244,7 @@ public:
     // it the most-recently-used entry inside its new frequency bucket.
     // On a miss, return false without changing value.
 
-    bool get(const std::string &key, std::string &value)
+    bool get(const std::string &key, std::string &value) override
     {
         EntryLocation *location = index_.find(key);
         if (location == nullptr || location->entryNode == nullptr)
@@ -255,8 +260,12 @@ public:
     // its value and count the put as an access (frequency increases by one).
     // If capacity is zero, the cache remains empty.
 
-    void put(const std::string &key, const std::string &value)
+    void put(const std::string &key, const std::string &value,
+             std::string *evictedKey = nullptr) override
     {
+        if (evictedKey != nullptr)
+            evictedKey->clear();
+
         if (capacity_ == 0)
             return;
 
@@ -269,7 +278,7 @@ public:
         }
 
         if (size_ == capacity_)
-            evictLeastFrequentlyUsed();
+            evictLeastFrequentlyUsed(evictedKey);
 
         FrequencyBucket *bucket = nullptr;
         if (firstBucket_ != nullptr && firstBucket_->frequency == 1)
@@ -279,7 +288,7 @@ public:
 
         DoublyLinkedList::Node *node = bucket->entries.pushFront(key, value);
 
-        // Rollback incase of inseration refusal
+        // Roll back if the index refuses the new entry.
         if (!index_.insert(key, EntryLocation(node, bucket)))
         {
             bucket->entries.erase(node);
@@ -295,7 +304,7 @@ public:
 
     // Remove an entry. Returns false when the key is absent.
 
-    bool remove(const std::string &key)
+    bool remove(const std::string &key) override
     {
         EntryLocation *location = index_.find(key);
         if (location == nullptr || location->entryNode == nullptr ||
@@ -315,13 +324,13 @@ public:
         return true;
     }
 
-    bool contains(const std::string &key) const
+    bool contains(const std::string &key) const override
     {
         return index_.contains(key);
     }
 
-    std::size_t size() const { return size_; }
-    std::size_t capacity() const { return capacity_; }
+    std::size_t size() const override { return size_; }
+    std::size_t capacity() const override { return capacity_; }
 
     std::size_t minFrequency() const { return minFrequency_; }
 
@@ -335,7 +344,7 @@ public:
 
     // Delete all entries and buckets.
 
-    void clear()
+    void clear() override
     {
         index_.clear();
 
