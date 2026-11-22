@@ -1,132 +1,216 @@
-#include <iostream>
 #include <cassert>
+#include <cstdint>
+#include <iostream>
 #include <stdexcept>
-#include "../src/structures/MinHeap.hpp"
+#include <string>
+#include <vector>
+
+#include "../src/cache/expiration_manager.hpp"
+
 using namespace std;
 
-void test_empty_heap()
+static void check(const ExpiryHeap &heap, size_t expectedSize)
 {
-    MinHeap heap;
-    assert(heap.empty() == true);
-    assert(heap.size() == 0);
-    bool caught_peek_exception = false;
+    assert(heap.size() == expectedSize);
+    assert(heap.validate());
+}
+
+static void testEmptyHeap()
+{
+    ExpiryHeap heap;
+    check(heap, 0);
+    assert(!heap.contains("missing"));
+
+    bool threw = false;
     try
     {
         heap.peek();
     }
-    catch (const std::runtime_error &e)
+    catch (const runtime_error &)
     {
-        caught_peek_exception = true;
+        threw = true;
     }
-    assert(caught_peek_exception && "peek() should throw runtime_error when empty");
+    assert(threw);
 
-    bool caught_pop_exception = false;
+    threw = false;
     try
     {
-        heap.pop();
+        heap.popMin();
     }
-    catch (const std::runtime_error &e)
+    catch (const runtime_error &)
     {
-        caught_pop_exception = true;
+        threw = true;
     }
-    assert(caught_pop_exception && "pop() should throw runtime_error when empty");
-    cout << "[SUCCESS] test_empty_heap" << endl;
+    assert(threw);
 }
 
-void test_single_element()
+static void testInsertUpdateAndPopOrder()
 {
-    MinHeap heap;
-    heap.push(42);
+    ExpiryHeap heap(2);
+    assert(heap.upsert("later", 300));
+    check(heap, 1);
+    assert(heap.upsert("first", 100));
+    check(heap, 2);
+    assert(heap.upsert("middle", 200));
+    check(heap, 3); // also exercises capacity growth
 
-    assert(heap.empty() == false);
-    assert(heap.size() == 1);
-    assert(heap.peek() == 42);
+    assert(heap.peek().key == "first");
+    assert(heap.peek().expiry == 100);
 
-    int val = heap.pop();
-    assert(val == 42);
-    assert(heap.empty() == true);
-    assert(heap.size() == 0);
+    // Updating an existing key must not change the number of entries.
+    assert(!heap.upsert("later", 50));
+    check(heap, 3);
+    assert(heap.peek().key == "later");
 
-    cout << "[SUCCESS] test_single_element" << endl;
+    ExpiryHeap::Entry e = heap.popMin();
+    assert(e.key == "later" && e.expiry == 50);
+    check(heap, 2);
+    e = heap.popMin();
+    assert(e.key == "first" && e.expiry == 100);
+    check(heap, 1);
+    e = heap.popMin();
+    assert(e.key == "middle" && e.expiry == 200);
+    check(heap, 0);
 }
 
-void test_min_heap_property()
+static void testRemoveRoot()
 {
-    MinHeap heap;
-    heap.push(10);
-    heap.push(4);
-    heap.push(15);
-    heap.push(20);
-    heap.push(0);
-    assert(heap.size() == 5);
-    assert(heap.peek() == 0);
-    cout << "[SUCCESS] test_min_heap_property" << endl;
+    ExpiryHeap heap;
+    heap.upsert("root", 10);
+    check(heap, 1);
+    heap.upsert("a", 20);
+    check(heap, 2);
+    heap.upsert("b", 30);
+    check(heap, 3);
+
+    assert(heap.remove("root"));
+    check(heap, 2);
+    assert(!heap.contains("root"));
+    assert(heap.peek().expiry == 20);
 }
 
-void test_pop_order()
+static void testRemoveLastElement()
 {
-    MinHeap heap;
-    int values[] = {8, 3, 10, 1, 6, 4, 7, 14, 13};
-    for (int v : values)
+    ExpiryHeap heap;
+    heap.upsert("a", 10);
+    check(heap, 1);
+    heap.upsert("b", 20);
+    check(heap, 2);
+    heap.upsert("c", 30);
+    check(heap, 3);
+
+    // In this insertion order, c is the last array element.
+    assert(heap.remove("c"));
+    check(heap, 2);
+    assert(!heap.contains("c"));
+    assert(heap.peek().key == "a");
+}
+
+static void testRemoveMiddleElement()
+{
+    ExpiryHeap heap;
+    heap.upsert("a", 10);
+    check(heap, 1);
+    heap.upsert("b", 20);
+    check(heap, 2);
+    heap.upsert("c", 30);
+    check(heap, 3);
+    heap.upsert("d", 40);
+    check(heap, 4);
+    heap.upsert("e", 50);
+    check(heap, 5);
+
+    // d occupies an interior heap-array position for this insertion order.
+    assert(heap.remove("d"));
+    check(heap, 4);
+    assert(!heap.contains("d"));
+    assert(heap.expiryOf("e") == 50);
+    assert(heap.peek().expiry == 10);
+    assert(!heap.remove("not-present"));
+    check(heap, 4);
+}
+
+static void testDuplicateExpiries()
+{
+    ExpiryHeap heap;
+    assert(heap.upsert("one", 100));
+    check(heap, 1);
+    assert(heap.upsert("two", 100));
+    check(heap, 2);
+    assert(heap.upsert("three", 100));
+    check(heap, 3);
+    assert(heap.upsert("earlier", 50));
+    check(heap, 4);
+
+    assert(heap.peek().expiry == 50);
+    assert(heap.popMin().key == "earlier");
+    check(heap, 3);
+
+    // Equal expiry values are all retained; their relative order is unspecified.
+    assert(heap.size() == 3);
+    for (int i = 0; i < 3; ++i)
     {
-        heap.push(v);
+        assert(heap.peek().expiry == 100);
+        heap.popMin();
+        check(heap, static_cast<size_t>(2 - i));
     }
-    assert(heap.pop() == 1);
-    assert(heap.pop() == 3);
-    assert(heap.pop() == 4);
-    assert(heap.pop() == 6);
-    assert(heap.pop() == 7);
-    assert(heap.pop() == 8);
-    assert(heap.pop() == 10);
-    assert(heap.pop() == 13);
-    assert(heap.pop() == 14);
-    assert(heap.empty() == true);
-
-    cout << "[SUCCESS] test_pop_order" << endl;
+    assert(heap.empty());
 }
 
-void test_capacity_growth()
+class RecordingListener : public ExpiryListener
 {
-    MinHeap heap(2);
-    const int num_elements = 1000;
-    for (int i = num_elements; i > 0; --i)
-    {
-        heap.push(i);
-    }
-    assert(heap.size() == num_elements);
-    assert(heap.peek() == 1);
-    for (int i = 1; i <= num_elements; ++i)
-    {
-        assert(heap.pop() == i);
-    }
-    assert(heap.empty() == true);
-    cout << "[SUCCESS] test_capacity_growth" << endl;
-}
+public:
+    vector<string> expired;
+    void onExpired(const string &key) override { expired.push_back(key); }
+};
 
-void test_duplicate_values()
+static void testExpirationManager()
 {
-    MinHeap heap;
-    heap.push(5);
-    heap.push(5);
-    heap.push(5);
-    heap.push(1);
-    assert(heap.size() == 4);
-    assert(heap.pop() == 1);
-    assert(heap.pop() == 5);
-    assert(heap.pop() == 5);
-    assert(heap.pop() == 5);
-    assert(heap.empty() == true);
-    cout << "[SUCCESS] test_duplicate_values" << endl;
+    ExpirationManager manager;
+    RecordingListener listener;
+
+    manager.setExpiry("a", 100);
+    assert(manager.validate());
+    manager.setExpiry("b", 100);
+    assert(manager.validate());
+    manager.setExpiry("c", 200);
+    assert(manager.validate());
+    assert(manager.size() == 3);
+
+    uint64_t next = 0;
+    assert(manager.nextExpiry(next) && next == 100);
+    assert(manager.sweep(99, &listener) == 0);
+    assert(manager.validate());
+    assert(listener.expired.empty());
+
+    assert(manager.sweep(100, &listener) == 2);
+    assert(manager.validate());
+    assert(manager.size() == 1);
+    assert(listener.expired.size() == 2);
+    assert(manager.contains("c"));
+
+    manager.cancel("c");
+    assert(manager.validate());
+    assert(manager.size() == 0);
+    assert(!manager.nextExpiry(next));
+
+    manager.setExpiry("reuse", 300);
+    assert(manager.validate());
+    manager.clear();
+    assert(manager.validate());
+    assert(manager.size() == 0);
 }
 
 int main()
 {
-    test_empty_heap();
-    test_single_element();
-    test_min_heap_property();
-    test_pop_order();
-    test_capacity_growth();
-    test_duplicate_values();
-    cout << "ALL TESTS PASSED!" << endl;
+    testEmptyHeap();
+    testInsertUpdateAndPopOrder();
+    testRemoveRoot();
+    testRemoveLastElement();
+    testRemoveMiddleElement();
+    testDuplicateExpiries();
+    testExpirationManager();
+
+    cout << "All ExpiryHeap and ExpirationManager tests passed!" << endl;
     return 0;
 }
