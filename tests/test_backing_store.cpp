@@ -1,4 +1,5 @@
 #include "../src/storage/backing_store.h"
+#include "../src/storage/record_codec.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -412,6 +413,294 @@ static void testCounters() {
     s.close();
 }
 
+static void testCodecRoundTrip() {
+    printf("codec round trip\n");
+    CHECK(CODEC_HEADER_SIZE == 20);
+    uint64_t expiry = 0;
+    std::string value;
+    std::string raw = encodeValue(1234567890123ull, "hello");
+    CHECK(raw.size() == CODEC_HEADER_SIZE + 5);
+    CHECK(decodeValue(raw, expiry, value) == Status::Ok);
+    CHECK(expiry == 1234567890123ull);
+    CHECK(value == "hello");
+    raw = encodeValue(0, "no ttl");
+    CHECK(decodeValue(raw, expiry, value) == Status::Ok);
+    CHECK(expiry == 0);
+    CHECK(value == "no ttl");
+    raw = encodeValue(~0ull, "largest expiry");
+    CHECK(decodeValue(raw, expiry, value) == Status::Ok);
+    CHECK(expiry == ~0ull);
+    CHECK(value == "largest expiry");
+    CHECK(!isExpired(0, 1000000));
+    CHECK(!isExpired(100, 99));
+    CHECK(isExpired(100, 100));
+    CHECK(isExpired(100, 101));
+}
+
+static void testCodecEmptyAndZeroBytes() {
+    printf("codec empty value and zero bytes\n");
+    uint64_t expiry = 0;
+    std::string value = "stale";
+    std::string raw = encodeValue(55, "");
+    CHECK(raw.size() == CODEC_HEADER_SIZE);
+    CHECK(decodeValue(raw, expiry, value) == Status::Ok);
+    CHECK(expiry == 55);
+    CHECK(value.empty());
+
+    std::string zeros("\0a\0\0b\0", 6);
+    raw = encodeValue(9, zeros);
+    CHECK(raw.size() == CODEC_HEADER_SIZE + 6);
+    CHECK(decodeValue(raw, expiry, value) == Status::Ok);
+    CHECK(value == zeros);
+    CHECK(value.size() == 6);
+
+    std::string onlyZeros(4, '\0');
+    raw = encodeValue(0, onlyZeros);
+    CHECK(decodeValue(raw, expiry, value) == Status::Ok);
+    CHECK(value == onlyZeros);
+
+    std::string looksLikeHeader = "CVAL";
+    raw = encodeValue(3, looksLikeHeader);
+    CHECK(decodeValue(raw, expiry, value) == Status::Ok);
+    CHECK(value == looksLikeHeader);
+
+    remove(TEST_FILE);
+    BackingStore s;
+    s.open(TEST_FILE);
+    CHECK(s.put("empty", encodeValue(7, "")) == Status::Ok);
+    CHECK(s.put("zeros", encodeValue(8, zeros)) == Status::Ok);
+    s.close();
+    CHECK(s.open(TEST_FILE) == Status::Ok);
+    std::string stored;
+    CHECK(s.get("empty", stored) == Status::Ok);
+    CHECK(decodeValue(stored, expiry, value) == Status::Ok);
+    CHECK(expiry == 7 && value.empty());
+    CHECK(s.get("zeros", stored) == Status::Ok);
+    CHECK(decodeValue(stored, expiry, value) == Status::Ok);
+    CHECK(expiry == 8 && value == zeros);
+    s.close();
+}
+
+static void testCodecCorruptHeader() {
+    printf("codec corrupt and short headers\n");
+    std::string good = encodeValue(5, "abc");
+    uint64_t expiry = 99;
+    std::string value = "keep";
+
+    CHECK(decodeValue("", expiry, value) == Status::ErrCorrupt);
+    CHECK(decodeValue(good.substr(0, 1), expiry, value) == Status::ErrCorrupt);
+    CHECK(decodeValue(good.substr(0, 19), expiry, value) == Status::ErrCorrupt);
+    CHECK(decodeValue(good.substr(0, 22), expiry, value) == Status::ErrCorrupt);
+
+    std::string bad = good;
+    bad[0] = 'X';
+    CHECK(decodeValue(bad, expiry, value) == Status::ErrCorrupt);
+
+    bad = good;
+    bad[4] = 9;
+    CHECK(decodeValue(bad, expiry, value) == Status::ErrCorrupt);
+
+    bad = good;
+    bad[16] = 4;
+    CHECK(decodeValue(bad, expiry, value) == Status::ErrCorrupt);
+
+    bad = good;
+    bad[16] = 2;
+    CHECK(decodeValue(bad, expiry, value) == Status::ErrCorrupt);
+
+    bad = good + "extra";
+    CHECK(decodeValue(bad, expiry, value) == Status::ErrCorrupt);
+
+    bad = good;
+    bad[19] = (char)0x7F;
+    CHECK(decodeValue(bad, expiry, value) == Status::ErrCorrupt);
+
+    CHECK(expiry == 99);
+    CHECK(value == "keep");
+    CHECK(decodeValue(good, expiry, value) == Status::Ok);
+    CHECK(expiry == 5 && value == "abc");
+}
+
+static void testCodecMaxSize() {
+    printf("codec maximum value size\n");
+    CHECK(MAX_USER_VALUE_LEN == MAX_VALUE_LEN - 20);
+    remove(TEST_FILE);
+    BackingStore s;
+    s.open(TEST_FILE);
+
+    std::string biggest(MAX_USER_VALUE_LEN, 'm');
+    std::string raw = encodeValue(42, biggest);
+    CHECK(raw.size() == MAX_VALUE_LEN);
+    CHECK(s.put("max", raw) == Status::Ok);
+
+    std::string tooBig(MAX_USER_VALUE_LEN + 1, 'm');
+    std::string rawTooBig = encodeValue(42, tooBig);
+    CHECK(rawTooBig.size() == MAX_VALUE_LEN + 1);
+    uint64_t sizeBefore = s.fileSize();
+    CHECK(s.put("toobig", rawTooBig) == Status::ErrTooLarge);
+    CHECK(!s.contains("toobig"));
+    CHECK(s.fileSize() == sizeBefore);
+    s.close();
+
+    CHECK(s.open(TEST_FILE) == Status::Ok);
+    std::string stored;
+    uint64_t expiry = 0;
+    std::string value;
+    CHECK(s.get("max", stored) == Status::Ok);
+    CHECK(decodeValue(stored, expiry, value) == Status::Ok);
+    CHECK(expiry == 42);
+    CHECK(value == biggest);
+    s.close();
+}
+
+static void testTombstone() {
+    printf("tombstone and removed keys after reopen\n");
+    remove(TEST_FILE);
+    BackingStore s;
+    s.open(TEST_FILE);
+    s.put("keep", "k");
+    s.put("gone", "g");
+    uint64_t before = s.fileSize();
+
+    CHECK(s.remove("gone") == Status::Ok);
+    CHECK(s.fileSize() == before + 13 + 4);
+    CHECK(!s.contains("gone"));
+    CHECK(s.remove("gone") == Status::NotFound);
+    CHECK(s.fileSize() == before + 13 + 4);
+    s.close();
+    CHECK((uint64_t)sizeOfFile(TEST_FILE) == before + 13 + 4);
+
+    CHECK(s.open(TEST_FILE) == Status::Ok);
+    CHECK(s.discardedBytes() == 0);
+    CHECK(s.count() == 1);
+    CHECK(!s.contains("gone"));
+    std::string v = "untouched";
+    CHECK(s.get("gone", v) == Status::NotFound);
+    CHECK(v == "untouched");
+    CHECK(valueIs(s, "keep", "k"));
+
+    CHECK(s.put("gone", "back") == Status::Ok);
+    s.close();
+    CHECK(s.open(TEST_FILE) == Status::Ok);
+    CHECK(valueIs(s, "gone", "back"));
+    CHECK(s.count() == 2);
+
+    CHECK(s.remove("gone") == Status::Ok);
+    s.close();
+    CHECK(s.open(TEST_FILE) == Status::Ok);
+    CHECK(s.get("gone", v) == Status::NotFound);
+    CHECK(s.count() == 1);
+    s.close();
+}
+
+// Mirrors the manager's read path: get, decode, drop the entry if expired.
+static Status accessAt(BackingStore& s, const std::string& key, uint64_t now,
+                       std::string& valueOut) {
+    std::string raw;
+    Status st = s.get(key, raw);
+    if (st != Status::Ok) return st;
+    uint64_t expiry = 0;
+    std::string value;
+    if (decodeValue(raw, expiry, value) != Status::Ok) return Status::ErrCorrupt;
+    if (isExpired(expiry, now)) {
+        s.remove(key);
+        return Status::NotFound;
+    }
+    valueOut = value;
+    return Status::Ok;
+}
+
+static void testRestartDemo() {
+    printf("restart demo with TTLs\n");
+    remove(TEST_FILE);
+    const uint64_t t0 = 1000;
+    {
+        BackingStore s;
+        CHECK(s.open(TEST_FILE) == Status::Ok);
+        CHECK(s.put("Weather:Cairo", encodeValue(t0 + 30, "Sunny 31C")) == Status::Ok);
+        CHECK(s.put("Weather:London", encodeValue(t0 + 300, "Rain 14C")) == Status::Ok);
+        CHECK(s.put("Weather:Paris", encodeValue(0, "Cloudy 12C")) == Status::Ok);
+        CHECK(s.put("Weather:Rome", encodeValue(t0 + 10, "Windy 18C")) == Status::Ok);
+        s.close();
+    }
+
+    BackingStore s;
+    CHECK(s.open(TEST_FILE) == Status::Ok);
+    CHECK(s.count() == 4);
+    std::string v;
+
+    CHECK(accessAt(s, "Weather:Cairo", t0 + 5, v) == Status::Ok && v == "Sunny 31C");
+    CHECK(accessAt(s, "Weather:London", t0 + 5, v) == Status::Ok && v == "Rain 14C");
+    CHECK(accessAt(s, "Weather:Paris", t0 + 5, v) == Status::Ok && v == "Cloudy 12C");
+    CHECK(accessAt(s, "Weather:Rome", t0 + 5, v) == Status::Ok && v == "Windy 18C");
+    CHECK(s.count() == 4);
+
+    uint64_t now = t0 + 60;
+    CHECK(accessAt(s, "Weather:Cairo", now, v) == Status::NotFound);
+    CHECK(accessAt(s, "Weather:Rome", now, v) == Status::NotFound);
+    CHECK(!s.contains("Weather:Cairo"));
+    CHECK(!s.contains("Weather:Rome"));
+    CHECK(s.count() == 2);
+    CHECK(accessAt(s, "Weather:London", now, v) == Status::Ok && v == "Rain 14C");
+    CHECK(accessAt(s, "Weather:Paris", now, v) == Status::Ok && v == "Cloudy 12C");
+
+    uint64_t size = s.fileSize();
+    CHECK(accessAt(s, "Weather:Cairo", now, v) == Status::NotFound);
+    CHECK(s.fileSize() == size);
+    s.close();
+
+    CHECK(s.open(TEST_FILE) == Status::Ok);
+    CHECK(s.count() == 2);
+    CHECK(accessAt(s, "Weather:Cairo", now, v) == Status::NotFound);
+    CHECK(accessAt(s, "Weather:Rome", now, v) == Status::NotFound);
+    CHECK(accessAt(s, "Weather:London", now, v) == Status::Ok);
+
+    CHECK(accessAt(s, "Weather:London", t0 + 400, v) == Status::NotFound);
+    CHECK(accessAt(s, "Weather:Paris", t0 + 400, v) == Status::Ok && v == "Cloudy 12C");
+    CHECK(s.count() == 1);
+    s.close();
+}
+
+static void testManagerErrorPaths() {
+    printf("error paths for the cache manager\n");
+    remove(TEST_FILE);
+    std::string v = "untouched";
+
+    BackingStore never;
+    CHECK(never.get("k", v) == Status::ErrNotOpen);
+    CHECK(v == "untouched");
+    CHECK(never.put("k", "v") == Status::ErrNotOpen);
+    CHECK(never.remove("k") == Status::ErrNotOpen);
+
+    BackingStore s;
+    CHECK(s.open(TEST_FILE) == Status::Ok);
+    CHECK(s.put("k", encodeValue(0, "val")) == Status::Ok);
+    s.close();
+    CHECK(!s.isOpen());
+    uint64_t reads = s.diskReads();
+    uint64_t writes = s.diskWrites();
+    CHECK(s.get("k", v) == Status::ErrNotOpen);
+    CHECK(v == "untouched");
+    CHECK(s.put("k", "again") == Status::ErrNotOpen);
+    CHECK(s.remove("k") == Status::ErrNotOpen);
+    CHECK(s.diskReads() == reads);
+    CHECK(s.diskWrites() == writes);
+
+    CHECK(s.open(TEST_FILE) == Status::Ok);
+    CHECK(s.get("k", v) == Status::Ok);
+    CHECK(s.get("absent", v) == Status::NotFound);
+    CHECK(s.remove("absent") == Status::NotFound);
+    CHECK(s.put("", "x") == Status::ErrInvalidArg);
+    CHECK(s.put(std::string(MAX_KEY_LEN + 1, 'k'), "x") == Status::ErrTooLarge);
+    CHECK(s.put("big", std::string(MAX_VALUE_LEN + 1, 'z')) == Status::ErrTooLarge);
+    CHECK(s.count() == 1);
+    s.close();
+
+    BackingStore bad;
+    CHECK(bad.open("no_such_directory_xyz/store.bin") == Status::ErrOpenFailed);
+    CHECK(bad.get("k", v) == Status::ErrNotOpen);
+}
+
 int main(int argc, char** argv) {
     if (argc > 1) SAMPLE_FILE = argv[1];
     testRoundTrip();
@@ -430,6 +719,13 @@ int main(int argc, char** argv) {
     testCorruptedKeyOnOpen();
     testCorruptionDetectedOnGet();
     testCounters();
+    testCodecRoundTrip();
+    testCodecEmptyAndZeroBytes();
+    testCodecCorruptHeader();
+    testCodecMaxSize();
+    testTombstone();
+    testRestartDemo();
+    testManagerErrorPaths();
     remove(TEST_FILE);
     printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

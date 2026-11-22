@@ -129,6 +129,63 @@ void testLRUTieBreakingWithinSameFrequency()
     assert(cache.validate());
 }
 
+void testPutReportsEvictedKeyFromMinimumFrequencyBucket()
+{
+    LFUCache cache(3);
+    cache.put("A", "Apple");
+    cache.put("B", "Banana");
+    cache.put("C", "Cherry");
+
+    // All three entries have frequency 1. A is the least recently used
+    // entry in that bucket, so it must be reported before it is deleted.
+    string evictedKey = "stale value";
+    cache.put("D", "Durian", &evictedKey);
+
+    assert(evictedKey == "A");
+    assert(!cache.contains("A"));
+    assert(cache.contains("B"));
+    assert(cache.contains("C"));
+    assert(cache.contains("D"));
+    assert(cache.validate());
+}
+
+void testPutClearsEvictionOutputWhenNothingIsEvicted()
+{
+    LFUCache cache(2);
+    string evictedKey = "stale value";
+
+    cache.put("A", "Apple", &evictedKey);
+    assert(evictedKey.empty());
+
+    evictedKey = "stale value";
+    cache.put("A", "Apricot", &evictedKey); // Update, not an eviction.
+    assert(evictedKey.empty());
+
+    LFUCache zeroCapacity(0);
+    evictedKey = "stale value";
+    zeroCapacity.put("A", "Apple", &evictedKey);
+    assert(evictedKey.empty());
+    assert(zeroCapacity.size() == 0);
+}
+
+void testRemovingLastEntryInMinimumBucketUpdatesMinimum()
+{
+    LFUCache cache(3);
+    cache.put("A", "Apple");
+    cache.put("B", "Banana");
+
+    string value;
+    assert(cache.get("A", value)); // A moves from frequency 1 to 2.
+    assert(cache.minFrequency() == 1);
+    assert(cache.frequencyOf("B") == 1);
+
+    // B is the only member of the first (frequency 1) bucket.
+    assert(cache.remove("B"));
+    assert(cache.minFrequency() == 2);
+    assert(cache.frequencyOf("A") == 2);
+    assert(cache.validate());
+}
+
 void testUpdateExistingKeyCountsAsAccess()
 {
     LFUCache cache(2);
@@ -268,6 +325,9 @@ int main()
     testFrequencyBucketCreationAndRemoval();
     testEvictsLowestFrequency();
     testLRUTieBreakingWithinSameFrequency();
+    testPutReportsEvictedKeyFromMinimumFrequencyBucket();
+    testPutClearsEvictionOutputWhenNothingIsEvicted();
+    testRemovingLastEntryInMinimumBucketUpdatesMinimum();
     testUpdateExistingKeyCountsAsAccess();
     testExplicitRemovalAndMinimumUpdate();
     testRepeatedEvictionsAndCapacityOne();

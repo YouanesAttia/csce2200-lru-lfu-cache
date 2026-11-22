@@ -28,7 +28,6 @@ public:
     bool contains(const string &) const override;
     size_t size() const { return order_.size(); }
     size_t capacity() const { return capacity_; }
-    bool contains(const string &key) const;
     bool validate() const;
     void clear() override;
 };
