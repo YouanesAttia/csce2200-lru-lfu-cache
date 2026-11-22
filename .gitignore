@@ -23,3 +23,7 @@ report/*.out
 report/*.toc
 report/*.bbl
 report/*.blg
+
+# Build output from the Makefile
+bin/
+test_store.bin
