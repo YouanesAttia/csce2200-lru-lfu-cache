@@ -1,9 +1,5 @@
 # LRU/LFU Cache with Persistent Backing Store
 
-**Course:** CSCE 2200  
-**Milestone:** 2 — Integrated cache, expiration management, and testing  
-**Language:** C++11
-
 ## 1. Project overview
 
 This project implements a bounded in-memory cache with selectable Least Recently Used (LRU) and Least Frequently Used (LFU) eviction policies, a persistent append-only backing store, and an application-level `CacheManager` that coordinates reads, writes, deletion, eviction, and TTL expiration.
