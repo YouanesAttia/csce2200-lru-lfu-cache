@@ -49,6 +49,11 @@ test: all
 	./bin/test_policy_parity
 	./bin/test_integration
 
+benchmark:
+	mkdir -p bin data/results
+	$(CXX) $(FLAGS) -o bin/benchmark benchmarks/benchmark.cpp $(LRU)
+	./bin/benchmark
+
 run:
 	mkdir -p bin
 	$(CXX) $(FLAGS) -o bin/cache src/app/main.cpp src/app/cli.cpp $(LRU) $(MANAGER) $(STORE)
@@ -83,4 +88,4 @@ clean:
 	rm -rf bin
 
 # Tells make these are command names, not files to build.
-.PHONY: all test run asan clean
+.PHONY: all test benchmark run asan clean
