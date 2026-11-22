@@ -41,6 +41,7 @@ make          # compile all test executables
 make test     # compile and run the full test suite
 make run      # build and start the CLI application
 make asan     # compile and run tests with AddressSanitizer/UBSan
+make benchmark # compare LRU/LFU under sequential, random, Zipf-like, and scan workloads
 make clean    # remove generated binaries
 ```
 
@@ -48,8 +49,12 @@ The project uses `g++` and C++11 by default. Override `CXX` or `FLAGS` on the ma
 
 The integration tests use a fake clock so TTL behavior is deterministic and does not depend on waiting in real time. The heap tests call `validate()` after each operation to check both heap order and the key-to-index mapping.
 
+## 5. Workload benchmark
+
+Run `make benchmark` to compare LRU and LFU using deterministic sequential, random, and Zipf-like access patterns, plus a scan-resistance experiment. The benchmark reports hit rate, elapsed time, and operations per second, and writes results to `data/results/workload_results.csv`. It benchmarks the in-memory cache policies directly; it does not measure backing-store disk latency. The Zipf-like workload is an approximation rather than an exact Zipf distribution. Regenerate results on the machine used for evaluation.
+
 ## 5. Milestone 2 scope and verification
 
 The repository includes component tests, an indexed expiry-heap test, policy-parity coverage, and cache/backing-store integration tests. The async worker and concurrent/thread-safe operation are deferred and are not claimed as implemented or verified. Git commit-history quality and TA repository access are external checks and are not established by running the local test suite.
 
-See [`docs/DESIGN.md`](docs/DESIGN.md) for the architecture, algorithms, and design trade-offs.
+See [`docs/design.md`](docs/design.md) for the architecture, algorithms, and design trade-offs.
