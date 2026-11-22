@@ -27,3 +27,6 @@ report/*.blg
 # Build output from the Makefile
 bin/
 test_store.bin
+
+# Compiled test executable
+tests/test_doubly_linked_list

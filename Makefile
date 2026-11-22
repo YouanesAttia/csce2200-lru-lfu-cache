@@ -30,6 +30,7 @@ all:
 	$(CXX) $(FLAGS) -o bin/test_hash_table_stress tests/test_hash_table_stress.cpp
 	$(CXX) $(FLAGS) -o bin/test_cli tests/test_cli.cpp src/app/cli.cpp
 	$(CXX) $(FLAGS) -o bin/test_doubly_linked_list tests/test_doubly_linked_list.cpp
+	$(CXX) $(FLAGS) -o bin/test_min_heap tests/test_min_heap.cpp
 	$(CXX) $(FLAGS) -o bin/test_lru_cache tests/test_lru_cache.cpp $(LRU)
 	$(CXX) $(FLAGS) -o bin/test_lfu_cache tests/test_lfu_cache.cpp
 	$(CXX) $(FLAGS) -o bin/test_backing_store tests/test_backing_store.cpp $(STORE)
@@ -41,6 +42,7 @@ test: all
 	./bin/test_hash_table_stress
 	./bin/test_cli
 	./bin/test_doubly_linked_list
+	./bin/test_min_heap
 	./bin/test_lru_cache
 	./bin/test_lfu_cache
 	./bin/test_backing_store
@@ -60,6 +62,7 @@ asan:
 	$(CXX) $(FLAGS) $(ASAN) -o bin/test_hash_table_stress tests/test_hash_table_stress.cpp
 	$(CXX) $(FLAGS) $(ASAN) -o bin/test_cli tests/test_cli.cpp src/app/cli.cpp
 	$(CXX) $(FLAGS) $(ASAN) -o bin/test_doubly_linked_list tests/test_doubly_linked_list.cpp
+	$(CXX) $(FLAGS) $(ASAN) -o bin/test_min_heap tests/test_min_heap.cpp
 	$(CXX) $(FLAGS) $(ASAN) -o bin/test_lru_cache tests/test_lru_cache.cpp $(LRU)
 	$(CXX) $(FLAGS) $(ASAN) -o bin/test_lfu_cache tests/test_lfu_cache.cpp
 	$(CXX) $(FLAGS) $(ASAN) -o bin/test_backing_store tests/test_backing_store.cpp $(STORE)
@@ -69,6 +72,7 @@ asan:
 	./bin/test_hash_table_stress
 	./bin/test_cli
 	./bin/test_doubly_linked_list
+	./bin/test_min_heap
 	./bin/test_lru_cache
 	./bin/test_lfu_cache
 	./bin/test_backing_store
