@@ -8,6 +8,7 @@
 #include "../src/cache/cache_manager.hpp"
 #include "../src/cache/lru_cache.h"
 #include "../src/storage/backing_store.h"
+#include "../src/storage/record_codec.hpp"
 
 using namespace std;
 
@@ -278,6 +279,54 @@ static void testSwitchPolicy()
     cout << "[PASS] testSwitchPolicy" << endl;
 }
 
+static void testSharedRecordCodec()
+{
+    cleanupFile();
+    storage::BackingStore store;
+    assert(store.open(TEST_DB) == storage::Status::Ok);
+    ExpirationManager expiry;
+    FakeClock clock(100);
+    CacheManager mgr(new LRUCache(2), store, expiry, clock);
+    string raw, out;
+    uint64_t expires = 0;
+    const string binary("a\0b", 3);
+
+    assert(mgr.set("written", binary, 50) == storage::Status::Ok);
+    assert(store.get("written", raw) == storage::Status::Ok);
+    assert(raw == storage::encodeValue(150, binary));
+    assert(storage::decodeValue(raw, expires, out) == storage::Status::Ok);
+    assert(expires == 150 && out == binary);
+    assert(mgr.set("permanent", "value") == storage::Status::Ok);
+    assert(store.get("permanent", raw) == storage::Status::Ok);
+    assert(raw == storage::encodeValue(0, "value"));
+
+    assert(store.put("external", storage::encodeValue(120, binary)) == storage::Status::Ok);
+    assert(mgr.get("external", out) == storage::Status::Ok && out == binary);
+    assert(expiry.expiryOf("external") == 120);
+    clock.advance(20);
+    assert(mgr.get("external", out) == storage::Status::NotFound);
+    assert(store.put("expired", storage::encodeValue(120, "old")) == storage::Status::Ok);
+    assert(mgr.get("expired", out) == storage::Status::NotFound);
+    assert(store.put("forever", storage::encodeValue(0, "ok")) == storage::Status::Ok);
+    assert(mgr.get("forever", out) == storage::Status::Ok && out == "ok");
+    assert(!expiry.contains("forever"));
+
+    for (size_t offset : {size_t(0), size_t(4), size_t(16)}) {
+        raw = storage::encodeValue(0, "abc");
+        raw[offset] ^= 1;
+        assert(store.put("corrupt", raw) == storage::Status::Ok);
+        assert(mgr.get("corrupt", out) == storage::Status::ErrCorrupt);
+        assert(!mgr.policy()->contains("corrupt"));
+    }
+    assert(store.put("legacy", string(9, '\0') + "old") == storage::Status::Ok);
+    assert(mgr.get("legacy", out) == storage::Status::ErrCorrupt);
+    assert(mgr.set("max", string(storage::MAX_USER_VALUE_LEN, 'x')) == storage::Status::Ok);
+    assert(mgr.set("too_big", string(storage::MAX_USER_VALUE_LEN + 1, 'x')) == storage::Status::ErrTooLarge);
+    store.close();
+    cleanupFile();
+    cout << "[PASS] testSharedRecordCodec" << endl;
+}
+
 int main()
 {
     testSetAndGetHit();
@@ -289,6 +338,7 @@ int main()
     testDel();
     testSweep();
     testSwitchPolicy();
+    testSharedRecordCodec();
 
     cout << "All integration tests passed!" << endl;
     return 0;

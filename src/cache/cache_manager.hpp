@@ -65,11 +65,6 @@ public:
     const ICache *policy() const { return cache_; }
 
 private:
-    static const size_t HEADER_SIZE = 9;
-
-    static string encodeValue(const string &value, bool hasExpiry, uint64_t expiry);
-    static bool decodeValue(const string &encoded, string &valueOut, bool &hasExpiryOut, uint64_t &expiryOut);
-
     ICache *cache_;
     storage::BackingStore &store_;
     ExpirationManager &expiry_;

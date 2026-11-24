@@ -1,4 +1,5 @@
 #include "cache_manager.hpp"
+#include "../storage/record_codec.hpp"
 
 using namespace std;
 
@@ -7,40 +8,6 @@ CacheManager::CacheManager(ICache *policy, storage::BackingStore &store, Expirat
 
 CacheManager::~CacheManager(){
     delete cache_;
-}
-
-string CacheManager::encodeValue(const string &value, bool hasExpiry, uint64_t expiry){
-    string encoded;
-    encoded.resize(HEADER_SIZE + value.size());
-
-    encoded[0] = hasExpiry ? static_cast<char>(1) : static_cast<char>(0);
-    for (size_t i = 0; i < 8; ++i){
-        encoded[1 + i] = static_cast<char>((expiry >> (i * 8)) & 0xFF);
-    }
-
-    for (size_t i = 0; i < value.size(); ++i){
-        encoded[HEADER_SIZE + i] = value[i];
-    }
-
-    return encoded;
-}
-
-bool CacheManager::decodeValue(const string &encoded, string &valueOut, bool &hasExpiryOut, uint64_t &expiryOut){
-    if (encoded.size() < HEADER_SIZE)
-        return false;
-
-    unsigned char flag = static_cast<unsigned char>(encoded[0]);
-    if (flag > 1)
-        return false;
-    hasExpiryOut = (flag == 1);
-    expiryOut = 0;
-    for (size_t i = 0; i < 8; ++i){
-        uint64_t byteVal = static_cast<unsigned char>(encoded[1 + i]);
-        expiryOut |= (byteVal << (i * 8));
-    }
-
-    valueOut = encoded.substr(HEADER_SIZE);
-    return true;
 }
 
 storage::Status CacheManager::get(const string &key, string &out){
@@ -67,12 +34,11 @@ storage::Status CacheManager::get(const string &key, string &out){
 
     if (st == storage::Status::Ok){
         string decodedValue;
-        bool hasExpiry = false;
         uint64_t expiryTime = 0;
 
-        if (!decodeValue(encoded, decodedValue, hasExpiry, expiryTime))
+        if (storage::decodeValue(encoded, expiryTime, decodedValue) != storage::Status::Ok)
             return storage::Status::ErrCorrupt;
-        if (hasExpiry && expiryTime <= now){
+        if (storage::isExpired(expiryTime, now)){
             store_.remove(key);
             ++stats_.expirations;
             ++stats_.misses;
@@ -88,7 +54,7 @@ storage::Status CacheManager::get(const string &key, string &out){
             }
         }
 
-        if (hasExpiry)
+        if (expiryTime != 0)
             expiry_.setExpiry(key, expiryTime);
         else
             expiry_.cancel(key);
@@ -109,7 +75,7 @@ storage::Status CacheManager::set(const string &key, const string &value, uint64
     bool hasExpiry = (ttl > 0);
     uint64_t expiryTime = hasExpiry ? (clock_.now() + ttl) : 0;
 
-    string encoded = encodeValue(value, hasExpiry, expiryTime);
+    string encoded = storage::encodeValue(expiryTime, value);
     storage::Status st = store_.put(key, encoded);
     if (st != storage::Status::Ok)
         return st;
