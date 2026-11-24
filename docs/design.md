@@ -4,8 +4,6 @@
 
 The system provides a bounded in-memory cache with LRU and LFU replacement policies, a persistent backing store, and time-to-live (TTL) expiration. `CacheManager` is the application-level coordinator. The design in this document describes the synchronous implementation in the repository.
 
-An asynchronous expiration worker and concurrent/thread-safe access are outside the verified scope of this milestone. The current expiration path is invoked synchronously through `CacheManager::sweep()` or expiration checks during reads.
-
 ## 2. Architecture
 
 ```text
