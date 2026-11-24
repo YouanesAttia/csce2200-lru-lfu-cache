@@ -27,9 +27,7 @@ static std::uint32_t nextRandom(std::uint32_t &state)
     return state;
 }
 
-static std::vector<std::string> makeWorkload(const std::string &kind,
-                                             std::size_t count,
-                                             std::size_t capacity)
+static std::vector<std::string> makeWorkload(const std::string &kind, std::size_t count, std::size_t capacity)
 {
     std::vector<std::string> keys;
     keys.reserve(count);
