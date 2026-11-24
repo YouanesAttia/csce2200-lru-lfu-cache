@@ -4,7 +4,6 @@
 
 #include <cassert>
 #include <iostream>
-#include <memory>
 #include <string>
 #include <vector>
 
@@ -79,14 +78,17 @@ static void testSameBasicScriptThroughICache()
         Operation(Operation::Remove, "missing")
     };
 
-    unique_ptr<ICache> lru(new LRUCache(5));
-    unique_ptr<ICache> lfu(new LFUCache(5));
+    // These are ordinary local objects. Their destructors run automatically
+    // when the test function returns.
+    LRUCache lru(5);
+    LFUCache lfu(5);
+    ICache *caches[] = {&lru, &lfu};
 
-    const vector<string> lruResults = runScript(lru.get(), script);
-    const vector<string> lfuResults = runScript(lfu.get(), script);
+    const vector<string> lruResults = runScript(caches[0], script);
+    const vector<string> lfuResults = runScript(caches[1], script);
 
     assert(lruResults == lfuResults);
-    assert(lru->size() == lfu->size());
+    assert(caches[0]->size() == caches[1]->size());
 
     const vector<string> expected = {
         "PUT:", "PUT:", "HIT:Apple", "PUT:", "HIT:Blueberry",
@@ -97,10 +99,10 @@ static void testSameBasicScriptThroughICache()
 
 static void testZeroCapacityThroughICache()
 {
-    unique_ptr<ICache> lru(new LRUCache(0));
-    unique_ptr<ICache> lfu(new LFUCache(0));
+    LRUCache lru(0);
+    LFUCache lfu(0);
+    ICache *caches[] = {&lru, &lfu};
 
-    ICache *caches[] = {lru.get(), lfu.get()};
     for (size_t i = 0; i < 2; ++i)
     {
         string evictedKey = "stale value";
@@ -119,10 +121,10 @@ static void testZeroCapacityThroughICache()
 
 static void testUpdateExistingKeyThroughICache()
 {
-    unique_ptr<ICache> lru(new LRUCache(2));
-    unique_ptr<ICache> lfu(new LFUCache(2));
+    LRUCache lru(2);
+    LFUCache lfu(2);
+    ICache *caches[] = {&lru, &lfu};
 
-    ICache *caches[] = {lru.get(), lfu.get()};
     for (size_t i = 0; i < 2; ++i)
     {
         caches[i]->put("A", "old value");
@@ -137,10 +139,10 @@ static void testUpdateExistingKeyThroughICache()
 
 static void testRemoveThenReinsertThroughICache()
 {
-    unique_ptr<ICache> lru(new LRUCache(2));
-    unique_ptr<ICache> lfu(new LFUCache(2));
+    LRUCache lru(2);
+    LFUCache lfu(2);
+    ICache *caches[] = {&lru, &lfu};
 
-    ICache *caches[] = {lru.get(), lfu.get()};
     for (size_t i = 0; i < 2; ++i)
     {
         caches[i]->put("A", "first value");
@@ -160,8 +162,9 @@ static void testPoliciesChooseDifferentVictims()
 {
     LRUCache lruCache(3);
     LFUCache lfuCache(3);
-    ICache *lru = &lruCache;
-    ICache *lfu = &lfuCache;
+    ICache *caches[] = {&lruCache, &lfuCache};
+    ICache *lru = caches[0];
+    ICache *lfu = caches[1];
 
     // Start with two entries. A is accessed three times and B once.
     // C is then inserted as a fresh entry.
